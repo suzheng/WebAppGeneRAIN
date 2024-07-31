@@ -5,7 +5,7 @@ from sklearn.manifold import TSNE
 import plotly.express as px
 import pandas as pd
 import umap
-
+import gzip
 # Function to read gene embeddings
 @st.cache_data
 def read_gene_embeddings(file_path):
