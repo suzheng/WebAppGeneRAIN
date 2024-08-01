@@ -1,154 +1,347 @@
 import streamlit as st
-import numpy as np
-from scipy.spatial.distance import cosine
-from sklearn.manifold import TSNE
-import plotly.express as px
+from utils.data_utils import read_gene_embeddings, load_gene_id_mapping, get_gene_id
+from utils.gene_utils import find_closest_genes, calculate_similarity, gene_calculation
+from utils.visualization_utils import plot_gene_embeddings, plot_gene_relationship
 import pandas as pd
-import umap
-import gzip
-# Function to read gene embeddings
-@st.cache_data
-def read_gene_embeddings(file_path):
-    gene_embeddings = {}
-    with gzip.open(file_path, 'rt') as file:
-        next(file)
-        for line in file:
-            parts = line.strip().split()
-            gene = parts[0]
-            embedding = np.array([float(x) for x in parts[1:]])
-            gene_embeddings[gene] = embedding
-    return gene_embeddings
-
-# Function to find similar genes
-def find_closest_genes(target_gene, gene_embeddings, n=20):
-    target_embedding = gene_embeddings[target_gene]
-    similarities = [(gene, 1 - cosine(embedding, target_embedding)) 
-                    for gene, embedding in gene_embeddings.items() 
-                    if gene != target_gene]
-    return sorted(similarities, key=lambda x: x[1], reverse=True)[:n]
-
-# Function to calculate gene similarity
-def calculate_similarity(gene1, gene2, gene_embeddings):
-    return 1 - cosine(gene_embeddings[gene1], gene_embeddings[gene2])
-
-# Function to perform gene calculation
-def gene_calculation(gene_a, gene_b, gene_c, gene_embeddings):
-    result_vector = (gene_embeddings[gene_b] - gene_embeddings[gene_a] + gene_embeddings[gene_c])
-    similarities = [(gene, 1 - cosine(embedding, result_vector)) 
-                    for gene, embedding in gene_embeddings.items()]
-    return sorted(similarities, key=lambda x: x[1], reverse=True)[0]
-
-# Load gene embeddings
+from utils.data_utils import get_gene_id
+# Load gene embeddings and ID mapping
 file_path = "data/GeneRAIN-vec.200d.txt.gz"
+mapping_file_path = "data/gencode.v43.Ensembl_ID_gene_symbol_mapping.GeneRAIN.txt"
 gene_embeddings = read_gene_embeddings(file_path)
+ensembl_to_symbol, symbol_to_ensembl = load_gene_id_mapping(mapping_file_path)
 
-# Streamlit app
-st.title("Gene Embedding Analysis")
+# Sidebar for navigation
+st.sidebar.title("Navigation")
 
-# Sidebar for selecting functionality
-function = st.sidebar.selectbox("Select Function", 
-                                ["Similar Genes", "Visualization", "Calculator", "Computing Similarity"])
+# Create a container for the navigation buttons
+nav_container = st.sidebar.container()
 
-if function == "Similar Genes":
+# Create buttons that look like tabs
+if nav_container.button("Home"):
+    st.session_state.page = "Home"
+if nav_container.button("Similar Genes"):
+    st.session_state.page = "Similar Genes"
+if nav_container.button("Visualization"):
+    st.session_state.page = "Visualization"
+if nav_container.button("Calculator"):
+    st.session_state.page = "Calculator"
+if nav_container.button("Computing Similarity"):
+    st.session_state.page = "Computing Similarity"
+st.markdown("""
+<style>
+    /* Existing styles for navigation buttons */
+    .stButton>button {
+        width: 100%;
+        border-radius: 0;
+        border: none;
+        border-bottom: 1px solid #e6e6e6;
+        text-align: left;
+        padding: 0.5rem 1rem;
+    }
+    .stButton>button:hover {
+        background-color: #f0f2f6;
+    }
+    .stButton>button:focus {
+        box-shadow: none;
+        background-color: #e6e6e6;
+    }
+    /* New styles for primary buttons */
+    .stButton.primary-button>button {
+        background-color: white !important;
+        color: #4CAF50 !important;
+        border: 2px solid #4CAF50 !important;
+        border-radius: 20px !important;
+        text-align: center !important;
+        transition: all 0.3s ease !important;
+    }
+    .stButton.primary-button>button:hover {
+        background-color: #4CAF50 !important;
+        color: white !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Home page
+def home():
+    # st.title("GeneRAIN-vec Gene Embedding Analysis Tools")
+    st.markdown("""
+    ## GeneRAIN-vec Gene Embedding Analysis Tools
+
+    This web application allows you to explore and analyze gene embeddings derived from the GeneRAIN model, a state-of-the-art deep learning approach for understanding gene relationships and functions.
+
+    ### What are Gene Embeddings?
+    Gene embeddings are vector representations of genes in a high-dimensional space. These embeddings capture complex relationships between genes based on their expression patterns and other biological attributes. In our case, each gene is represented by a 200-dimensional vector.
+
+    ### About the GeneRAIN Model
+    GeneRAIN (Gene Representation using AI and Network-oriented approaches) is a transformer-based model trained on a large dataset of 410K human bulk RNA-seq samples. It uses a novel 'Binning-By-Gene' normalization method and a GPT (Generative Pre-trained Transformer) architecture to learn multifaceted representations of genes.
+
+    ### How to Use This Tool
+    Use the sidebar to select from four main functions:
+    1. Find Similar Genes
+    2. Visualize Gene Lists
+    3. Gene Relationship Calculator
+    4. Compute Gene Similarity
+
+    Each function provides unique insights into gene relationships and properties.
+
+    For more information, please refer to our paper: [Multifaceted Representation of Genes via Deep Learning of Gene Expression Networks](https://www.biorxiv.org/content/10.1101/2024.03.07.583777)
+
+    Contact: zheng.su1@unsw.edu.au
+    """)
+
+def similar_genes():
     st.header("Find Similar Genes")
-    target_gene = st.text_input("Enter a gene name:")
-    if target_gene:
-        if target_gene in gene_embeddings:
-            similar_genes = find_closest_genes(target_gene, gene_embeddings)
-            st.write(f"Genes similar to {target_gene}:")
+    st.markdown("""
+    This function allows you to find genes that are similar to a given gene based on their embeddings.
+    The similarity is calculated using cosine similarity in the 200-dimensional embedding space.
+    
+    ### How to use:
+    1. Enter a gene name or Ensembl ID in the text box below.
+    2. Select the number of similar genes to display.
+    3. Click the 'Submit' button or press Enter.
+    4. The app will display the most similar genes and their similarity scores.
+    5. A visualization of these genes will be shown using PCA, t-SNE, or UMAP for dimensionality reduction.
+    """)
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        target_gene = st.text_input("Enter a gene name or Ensembl ID (e.g. TP53 or ENSG00000141510):", key="target_gene_input")
+        num_genes = st.selectbox("Number of similar genes to return:", options=[10, 20, 50, 100], index=0)
+        submit_button = st.button("Submit", key="submit_button", use_container_width=True, help="Click to find similar genes")
+        st.markdown('<div class="primary-button"></div>', unsafe_allow_html=True)       
+
+
+    if submit_button or target_gene:
+        gene_id = get_gene_id(target_gene, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
+        if gene_id:
+            similar_genes = find_closest_genes(gene_id, gene_embeddings, n=num_genes)
+            
+            # Prepare data for the table
+            table_data = []
             for gene, similarity in similar_genes:
-                st.write(f"{gene}: {similarity:.4f}")
+                symbol = ensembl_to_symbol.get(gene, gene)
+                ensembl = symbol_to_ensembl.get(gene, gene)
+                if symbol == ensembl:
+                    display_name = symbol
+                else:
+                    display_name = f"{symbol} ({ensembl})"
+                table_data.append({"Gene Symbol": symbol, "Ensembl ID": ensembl, "Similarity Score": f"{similarity:.4f}"})
+            
+            # Display the table with pagination
+            st.write(f"Genes similar to {target_gene}:")
+            df = pd.DataFrame(table_data)
+            page_size = 10
+            num_pages = (len(df) + page_size - 1) // page_size
+            
+            # Page selector
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                page_number = st.selectbox("Page", options=range(1, num_pages + 1))
+            
+            # Display table based on page selection
+            start_idx = (page_number - 1) * page_size
+            end_idx = min(start_idx + page_size, len(df))
+            st.table(df.iloc[start_idx:end_idx])
+            
+            # Download button
+            csv = df.to_csv(index=False)
+            st.download_button(
+                label="Download CSV",
+                data=csv,
+                file_name=f"similar_genes_to_{target_gene}.csv",
+                mime="text/csv",
+            )
             
             # Visualization
             st.subheader("Visualization of Similar Genes")
-            genes_to_plot = [target_gene] + [gene for gene, _ in similar_genes[:19]]
-            embeddings_to_plot = np.array([gene_embeddings[gene] for gene in genes_to_plot])
+            genes_to_plot = [gene_id] + [gene for gene, _ in similar_genes[:min(19, num_genes-1)]]
+            embeddings_to_plot = [gene_embeddings[gene] for gene in genes_to_plot]
             
-            method = st.radio("Select visualization method:", ["t-SNE", "UMAP"])
-            
-            if method == "t-SNE":
-                tsne = TSNE(n_components=2, random_state=42)
-                embeddings_2d = tsne.fit_transform(embeddings_to_plot)
-            else:
-                reducer = umap.UMAP(random_state=42)
-                embeddings_2d = reducer.fit_transform(embeddings_to_plot)
-            
-            df = pd.DataFrame({
-                'x': embeddings_2d[:, 0],
-                'y': embeddings_2d[:, 1],
-                'gene': genes_to_plot,
-                'is_target': [gene == target_gene for gene in genes_to_plot]
-            })
-            
-            fig = px.scatter(df, x='x', y='y', text='gene', color='is_target',
-                             color_discrete_map={True: 'red', False: 'blue'},
-                             title=f"{method} Visualization of Similar Genes")
-            fig.update_traces(textposition='top center')
-            st.plotly_chart(fig)
+            method = st.radio("Select visualization method:", ["PCA", "t-SNE", "UMAP"])
+            plot_gene_embeddings(embeddings_to_plot, genes_to_plot, method, gene_id)
         else:
             st.error(f"Gene {target_gene} not found in the embeddings.")
 
-elif function == "Visualization":
+def visualization():
     st.header("Gene List Visualization")
-    gene_lists = st.text_area("Enter comma-separated gene lists (one or two lists, separate lists with a newline):")
-    if gene_lists:
-        lists = [list.strip().split(',') for list in gene_lists.split('\n') if list.strip()]
-        if len(lists) > 2:
-            st.error("Please enter at most two lists of genes.")
+    st.markdown("""
+    This function allows you to visualize the relationships between multiple genes in a 2D space.
+    
+    ### How to use:
+    1. Enter up to three comma-separated lists of genes (names or Ensembl IDs) in the text area below.
+    2. If entering multiple lists, separate them with a newline.
+    3. The app will create a 2D projection of these genes using PCA, t-SNE, or UMAP.
+    4. Genes from different lists will be colored differently.
+
+    """)
+
+    def update_input():
+        st.session_state.gene_lists = "TP53,MDM2,CDKN1A,BAX\nMYC,CCND1,CDK4,E2F1\nBRCA1,BRCA2,ATM,CHEK2"
+
+    # Initialize gene_lists in session state if it doesn't exist
+    if 'gene_lists' not in st.session_state:
+        st.session_state.gene_lists = ""
+
+    gene_lists = st.text_area("Enter comma-separated gene lists (up to three lists, separate lists with a newline):", st.session_state.gene_lists)
+    
+    # Add the example link
+    st.button("Input example genes", key="viz_example_button", on_click=update_input, help="Click to input example genes")
+
+    method = st.radio("Select visualization method:", ["PCA", "t-SNE", "UMAP"])
+    submit_button = st.button("Submit", key="viz_submit_button", use_container_width=True, help="Click to visualize genes")
+    st.markdown('<div class="primary-button"></div>', unsafe_allow_html=True)
+
+    if submit_button and gene_lists:
+        # Store the input in session state
+        st.session_state.gene_lists = gene_lists
+
+
+        # Parse input
+        if ',' in gene_lists:
+            lists = [list(map(str.strip, gene_group.split(','))) for gene_group in gene_lists.split('\n') if gene_group.strip()]
+        else:
+            lists = [gene_lists.split()]
+
+        if len(lists) > 3:
+            st.error("Please enter at most three lists of genes.")
         else:
             all_genes = [gene.strip() for sublist in lists for gene in sublist]
-            valid_genes = [gene for gene in all_genes if gene in gene_embeddings]
+            valid_genes = []
+            invalid_genes = []
+            for gene in all_genes:
+                gene_id = get_gene_id(gene, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
+                if gene_id:
+                    valid_genes.append(gene_id)
+                else:
+                    invalid_genes.append(gene)
+            
+            if invalid_genes:
+                st.warning(f"The following genes were not found and will be excluded: {', '.join(invalid_genes)}")
             
             if len(valid_genes) > 1:
-                embeddings_to_plot = np.array([gene_embeddings[gene] for gene in valid_genes])
-                
-                method = st.radio("Select visualization method:", ["t-SNE", "UMAP"])
-                
-                if method == "t-SNE":
-                    tsne = TSNE(n_components=2, random_state=42)
-                    embeddings_2d = tsne.fit_transform(embeddings_to_plot)
-                else:
-                    reducer = umap.UMAP(random_state=42)
-                    embeddings_2d = reducer.fit_transform(embeddings_to_plot)
-                
-                df = pd.DataFrame({
-                    'x': embeddings_2d[:, 0],
-                    'y': embeddings_2d[:, 1],
-                    'gene': valid_genes,
-                    'list': ['List 1' if gene in lists[0] else 'List 2' for gene in valid_genes]
-                })
-                
-                fig = px.scatter(df, x='x', y='y', text='gene', color='list',
-                                 title=f"{method} Visualization of Gene Lists")
-                fig.update_traces(textposition='top center')
-                st.plotly_chart(fig)
+                embeddings_to_plot = [gene_embeddings[gene] for gene in valid_genes]
+                plot_gene_embeddings(embeddings_to_plot, valid_genes, method, lists=lists)
             else:
                 st.error("Not enough valid genes to visualize.")
 
-elif function == "Calculator":
+# Update the calculator function
+def calculator():
     st.header("Gene Relationship Calculator")
-    st.write("Calculate: gene_D is to gene_C as gene_A is to gene_B")
-    gene_a = st.text_input("Enter gene A:")
-    gene_b = st.text_input("Enter gene B:")
-    gene_c = st.text_input("Enter gene C:")
+    st.markdown("""
+    This function allows you to explore gene relationships using vector arithmetic on gene embeddings.
+    It's similar to word analogies in natural language processing.
     
-    if gene_a and gene_b and gene_c:
-        if all(gene in gene_embeddings for gene in [gene_a, gene_b, gene_c]):
-            result_gene, similarity = gene_calculation(gene_a, gene_b, gene_c, gene_embeddings)
-            st.write(f"The gene D that completes the relationship is: {result_gene}")
-            st.write(f"Similarity score: {similarity:.4f}")
-        else:
-            st.error("One or more genes not found in the embeddings.")
+    ### How to use:
+    1. Enter three gene names or Ensembl IDs for A, B, and C.
+    2. The app will find gene D such that the relationship A:B is similar to C:D.
+    3. The result shows the most likely gene D and its similarity score.
+    4. A visualization of the four genes and their relationships will be displayed.
+    
+    """)
+    
+    def update_input():
+        st.session_state.gene_a = "BRCA1"
+        st.session_state.gene_b = "BRCA2"
+        st.session_state.gene_c = "TP53"
 
-elif function == "Computing Similarity":
+    st.write("Calculate: gene_D is to gene_C as gene_A is to gene_B")
+    gene_a = st.text_input("Enter gene A:", key="gene_a")
+    gene_b = st.text_input("Enter gene B:", key="gene_b")
+    gene_c = st.text_input("Enter gene C:", key="gene_c")
+    
+    # Add the example link
+    st.button("Input example genes", key="calc_example_button", on_click=update_input, help="Click to input example genes")
+
+    if st.button("Calculate", key="calc_button", use_container_width=True, help="Click to calculate gene relationship"):
+        st.markdown('<div class="primary-button"></div>', unsafe_allow_html=True)
+    
+        if gene_a and gene_b and gene_c:
+            gene_a_id = get_gene_id(gene_a, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
+            gene_b_id = get_gene_id(gene_b, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
+            gene_c_id = get_gene_id(gene_c, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
+            
+            if all([gene_a_id, gene_b_id, gene_c_id]):
+                result_gene, similarity = gene_calculation(gene_a_id, gene_b_id, gene_c_id, gene_embeddings)
+                display_name = ensembl_to_symbol.get(result_gene, result_gene)
+                st.write(f"The gene D that completes the relationship is: {display_name} ({result_gene})")
+                st.write(f"Similarity score: {similarity:.4f}")
+                
+                # Visualize the gene relationship
+                fig = plot_gene_relationship(gene_a_id, gene_b_id, gene_c_id, result_gene, gene_embeddings)
+                st.plotly_chart(fig)
+                
+            else:
+                invalid_genes = [gene for gene, gene_id in zip([gene_a, gene_b, gene_c], [gene_a_id, gene_b_id, gene_c_id]) if not gene_id]
+                st.error(f"The following genes were not found: {', '.join(invalid_genes)}")
+        else:
+            st.error("Please enter all three genes.")
+
+def computing_similarity():
     st.header("Compute Gene Similarity")
-    genes = st.text_input("Enter two space-separated genes:")
-    if genes:
-        gene1, gene2 = genes.split()
-        if gene1 in gene_embeddings and gene2 in gene_embeddings:
-            similarity = calculate_similarity(gene1, gene2, gene_embeddings)
-            st.write(f"Similarity between {gene1} and {gene2}: {similarity:.4f}")
-        else:
-            st.error("One or both genes not found in the embeddings.")
+    st.markdown("""
+    This function calculates the similarity between two genes based on their embeddings.
+    
+    ### How to use:
+    1. Enter two gene names or Ensembl IDs, separated by a space.
+    2. Click the 'Calculate' button.
+    3. The app will display the similarity between the genes and how this similarity ranks among all other genes.
+    """)
 
-st.sidebar.info("This app analyzes gene embeddings using various techniques.")
+    # Function to update the input field
+    def update_input():
+        st.session_state.gene_input = "TP53 MDM2"
+
+    # Display the input field
+    genes = st.text_input("Enter two space-separated genes:", key="gene_input")
+    
+    # Add the example link
+    st.button("Input example genes", key="example_button", on_click=update_input, help="Click to input example genes")
+
+
+    if st.button("Calculate", key="sim_calc_button", use_container_width=True, help="Click to calculate gene embedding similarity"):
+        st.markdown('<div class="primary-button"></div>', unsafe_allow_html=True)
+        if genes:
+            gene1, gene2 = genes.split()
+            gene1_id = get_gene_id(gene1, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
+            gene2_id = get_gene_id(gene2, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
+            
+            if gene1_id and gene2_id:
+                similarity, rank_1, _, rank_2, _ = calculate_similarity(gene1_id, gene2_id, gene_embeddings)
+                total_genes = len(gene_embeddings)
+                
+                st.write(f"Similarity between {gene1}  and {gene2} : {similarity:.4f}")
+                st.write(f"\nCompared to {gene2}, {rank_1}/{total_genes} genes ({rank_1/total_genes*100:.2f}%) have higher similarity with {gene1}.")
+                st.write(f"Compared to {gene1}, {rank_2}/{total_genes} genes ({rank_2/total_genes*100:.2f}%) have higher similarity with {gene2}.")
+                
+                st.write("\nNote: The rankings may differ for each gene due to the nature of the embedding space.")
+            else:
+                invalid_genes = [gene for gene, gene_id in zip([gene1, gene2], [gene1_id, gene2_id]) if not gene_id]
+                st.error(f"The following genes were not found: {', '.join(invalid_genes)}")
+        else:
+            st.error("Please enter two genes.")
+
+
+
+# Initialize the page state if it doesn't exist
+if 'page' not in st.session_state:
+    st.session_state.page = "Home"
+
+# Rest of your code remains the same, but replace the if-elif statements with:
+if st.session_state.page == "Home":
+    home()
+elif st.session_state.page == "Similar Genes":
+    similar_genes()
+elif st.session_state.page == "Visualization":
+    visualization()
+elif st.session_state.page == "Calculator":
+    calculator()
+elif st.session_state.page == "Computing Similarity":
+    computing_similarity()
+
+# Footer
+st.sidebar.markdown("---")
+st.sidebar.info("""
+This app analyzes gene embeddings using various techniques. 
+The embeddings are derived from the GeneRAIN model, which was trained on a large dataset of human bulk RNA-seq samples.
+For more details, please refer to our paper or contact zheng.su1@unsw.edu.au
+""")
