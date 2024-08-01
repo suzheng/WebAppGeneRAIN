@@ -4,6 +4,7 @@ from utils.gene_utils import find_closest_genes, calculate_similarity, gene_calc
 from utils.visualization_utils import plot_gene_embeddings, plot_gene_relationship
 import pandas as pd
 from utils.data_utils import get_gene_id
+from PIL import Image
 # Load gene embeddings and ID mapping
 file_path = "data/GeneRAIN-vec.200d.txt.gz"
 mapping_file_path = "data/gencode.v43.Ensembl_ID_gene_symbol_mapping.GeneRAIN.txt"
@@ -11,7 +12,7 @@ gene_embeddings = read_gene_embeddings(file_path)
 ensembl_to_symbol, symbol_to_ensembl = load_gene_id_mapping(mapping_file_path)
 
 # Sidebar for navigation
-st.sidebar.title("Navigation")
+st.sidebar.title("GeneRAIN-vec")
 
 # Create a container for the navigation buttons
 nav_container = st.sidebar.container()
@@ -63,6 +64,8 @@ st.markdown("""
 
 # Home page
 def home():
+    image = Image.open("data/crop2.jpg")
+    st.image(image, use_column_width=True)
     # st.title("GeneRAIN-vec Gene Embedding Analysis Tools")
     st.markdown("""
     ## GeneRAIN-vec Gene Embedding Analysis Tools
@@ -70,12 +73,12 @@ def home():
     This web application allows you to explore and analyze gene embeddings derived from the GeneRAIN model, a state-of-the-art deep learning approach for understanding gene relationships and functions.
 
     ### What are Gene Embeddings?
-    Gene embeddings are vector representations of genes in a high-dimensional space. These embeddings capture complex relationships between genes based on their expression patterns and other biological attributes. In our case, each gene is represented by a 200-dimensional vector.
+    Gene embeddings are vector representations of genes in a high-dimensional space. These embeddings capture complex relationships between genes based on their expression patterns. In our case, each gene is represented by a 200-dimensional vector.
 
-    ### About the GeneRAIN Model
-    GeneRAIN (Gene Representation using AI and Network-oriented approaches) is a transformer-based model trained on a large dataset of 410K human bulk RNA-seq samples. It uses a novel 'Binning-By-Gene' normalization method and a GPT (Generative Pre-trained Transformer) architecture to learn multifaceted representations of genes.
+    ### About the GeneRAIN Models
+    GeneRAIN are transformer-based models trained on a large dataset of 410K human bulk RNA-seq samples. These embeddings are derived from the GPT protein-coding+lncRNA model, which uses a novel 'Binning-By-Gene' normalization method and a GPT (Generative Pre-trained Transformer) architecture to learn multifaceted representations of genes.
 
-    ### How to Use This Tool
+    ### How to Use the Tools
     Use the sidebar to select from four main functions:
     1. Find Similar Genes
     2. Visualize Gene Lists
@@ -84,8 +87,12 @@ def home():
 
     Each function provides unique insights into gene relationships and properties.
 
-    For more information, please refer to our paper: [Multifaceted Representation of Genes via Deep Learning of Gene Expression Networks](https://www.biorxiv.org/content/10.1101/2024.03.07.583777)
+    For more information, please refer to our paper: 
+                
+    Zheng Su, Mingyan Fang, Andrei Smolnikov, Marcel E. Dinger, Emily Oates, Fatemeh Vafaee. Multifaceted Representation of Genes via Deep Learning of Gene Expression Networks, bioRxiv 2024.03.07.583777, [doi: https://doi.org/10.1101/2024.03.07.583777](https://www.biorxiv.org/content/10.1101/2024.03.07.583777)
 
+    The complete gene embedding matrix is avaiable in [our Zenodo repo](https://zenodo.org/records/10408775).
+                
     Contact: zheng.su1@unsw.edu.au
     """)
 
@@ -96,11 +103,10 @@ def similar_genes():
     The similarity is calculated using cosine similarity in the 200-dimensional embedding space.
     
     ### How to use:
-    1. Enter a gene name or Ensembl ID in the text box below.
+    1. Enter a gene symbol or Ensembl ID in the text box below.
     2. Select the number of similar genes to display.
-    3. Click the 'Submit' button or press Enter.
-    4. The app will display the most similar genes and their similarity scores.
-    5. A visualization of these genes will be shown using PCA, t-SNE, or UMAP for dimensionality reduction.
+    3. The app will display the most similar genes and their similarity scores.
+    4. A visualization of these genes will be shown using PCA, t-SNE, or UMAP for dimensionality reduction.
     """)
     
     col1, col2 = st.columns([3, 1])
@@ -154,7 +160,8 @@ def similar_genes():
             
             # Visualization
             st.subheader("Visualization of Similar Genes")
-            genes_to_plot = [gene_id] + [gene for gene, _ in similar_genes[:min(19, num_genes-1)]]
+            # genes_to_plot = [gene_id] + [gene for gene, _ in similar_genes[:min(19, num_genes-1)]]
+            genes_to_plot = [gene_id] + [gene for gene, _ in similar_genes]
             embeddings_to_plot = [gene_embeddings[gene] for gene in genes_to_plot]
             
             method = st.radio("Select visualization method:", ["PCA", "t-SNE", "UMAP"])
@@ -168,7 +175,7 @@ def visualization():
     This function allows you to visualize the relationships between multiple genes in a 2D space.
     
     ### How to use:
-    1. Enter up to three comma-separated lists of genes (names or Ensembl IDs) in the text area below.
+    1. Enter up to three comma-separated lists of genes (symbols or Ensembl IDs) in the text area below.
     2. If entering multiple lists, separate them with a newline.
     3. The app will create a 2D projection of these genes using PCA, t-SNE, or UMAP.
     4. Genes from different lists will be colored differently.
@@ -232,7 +239,7 @@ def calculator():
     It's similar to word analogies in natural language processing.
     
     ### How to use:
-    1. Enter three gene names or Ensembl IDs for A, B, and C.
+    1. Enter three gene symbols or Ensembl IDs for A, B, and C.
     2. The app will find gene D such that the relationship A:B is similar to C:D.
     3. The result shows the most likely gene D and its similarity score.
     4. A visualization of the four genes and their relationships will be displayed.
@@ -282,7 +289,7 @@ def computing_similarity():
     This function calculates the similarity between two genes based on their embeddings.
     
     ### How to use:
-    1. Enter two gene names or Ensembl IDs, separated by a space.
+    1. Enter two gene symbols or Ensembl IDs, separated by a space.
     2. Click the 'Calculate' button.
     3. The app will display the similarity between the genes and how this similarity ranks among all other genes.
     """)
@@ -310,8 +317,8 @@ def computing_similarity():
                 total_genes = len(gene_embeddings)
                 
                 st.write(f"Similarity between {gene1}  and {gene2} : {similarity:.4f}")
-                st.write(f"\nCompared to {gene2}, {rank_1}/{total_genes} genes ({rank_1/total_genes*100:.2f}%) have higher similarity with {gene1}.")
-                st.write(f"Compared to {gene1}, {rank_2}/{total_genes} genes ({rank_2/total_genes*100:.2f}%) have higher similarity with {gene2}.")
+                st.write(f"\nCompared to {gene2}, {rank_1}/{total_genes} other genes ({rank_1/total_genes*100:.2f}%) have higher similarity with {gene1}.")
+                st.write(f"Compared to {gene1}, {rank_2}/{total_genes} other genes ({rank_2/total_genes*100:.2f}%) have higher similarity with {gene2}.")
                 
                 st.write("\nNote: The rankings may differ for each gene due to the nature of the embedding space.")
             else:
@@ -343,5 +350,15 @@ st.sidebar.markdown("---")
 st.sidebar.info("""
 This app analyzes gene embeddings using various techniques. 
 The embeddings are derived from the GeneRAIN model, which was trained on a large dataset of human bulk RNA-seq samples.
-For more details, please refer to our paper or contact zheng.su1@unsw.edu.au
+For more details, please refer to our paper.
 """)
+
+# Add license statement
+st.sidebar.markdown("---")
+st.sidebar.markdown("""
+<small>
+This work is licensed under a 
+<a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank">
+CC BY-NC 4.0 License</a>.
+</small>
+""", unsafe_allow_html=True)

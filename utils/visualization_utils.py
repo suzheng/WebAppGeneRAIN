@@ -5,7 +5,20 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import umap
 import plotly.express as px
+import plotly.graph_objects as go
 from utils.data_utils import get_gene_id
+
+# Global colorblind-friendly color palette
+COLORBLIND_COLORS = {
+    'blue': '#3182bd',
+    'orange': '#e6550d',
+    'green': '#31a354',
+    'red': '#de2d26',
+    'purple': '#756bb1',
+    'brown': '#8c6d31',
+    'pink': '#fd8d3c',
+    'gray': '#969696'
+}
 
 def plot_gene_embeddings(embeddings, genes, method, target_gene=None, lists=None):
     if len(embeddings) < 3:
@@ -33,12 +46,16 @@ def plot_gene_embeddings(embeddings, genes, method, target_gene=None, lists=None
     if target_gene:
         df['My input gene'] = df['gene'] == target_gene
         fig = px.scatter(df, x='x', y='y', text='gene', color='My input gene',
-                         color_discrete_map={True: 'red', False: 'blue'},
+                         color_discrete_map={True: COLORBLIND_COLORS['red'], False: COLORBLIND_COLORS['blue']},
                          title=f"{method} Visualization of Similar Genes")
     elif lists:
+        color_map = {'List 1': COLORBLIND_COLORS['blue'], 
+                     'List 2': COLORBLIND_COLORS['orange'], 
+                     'List 3': COLORBLIND_COLORS['green']}
         df['list'] = ['List 1' if gene in lists[0] else 'List 2' if len(lists) > 1 and gene in lists[1] else 'List 3' for gene in genes]
         fig = px.scatter(df, x='x', y='y', text='gene', color='list',
-                         title=f"{method} Visualization of Gene Lists")
+                        color_discrete_map=color_map,
+                        title=f"{method} Visualization of Gene Lists")
     else:
         fig = px.scatter(df, x='x', y='y', text='gene',
                          title=f"{method} Visualization of Gene Embeddings")
@@ -63,10 +80,6 @@ def plot_gene_embeddings(embeddings, genes, method, target_gene=None, lists=None
     )
     st.plotly_chart(fig, use_container_width=True)
 
-
-import plotly.graph_objects as go
-from sklearn.decomposition import PCA
-
 def plot_gene_relationship(gene_a, gene_b, gene_c, gene_d, gene_embeddings):
     # Get embeddings for the four genes
     embeddings = [gene_embeddings[gene] for gene in [gene_a, gene_b, gene_c, gene_d]]
@@ -89,7 +102,8 @@ def plot_gene_relationship(gene_a, gene_b, gene_c, gene_d, gene_embeddings):
     fig.add_trace(go.Scatter(
         x=df['x'], y=df['y'], text=df['gene'],
         mode='markers+text', textposition="top center",
-        marker=dict(size=10, color=['red', 'blue', 'green', 'purple'])
+        marker=dict(size=10, color=[COLORBLIND_COLORS['red'], COLORBLIND_COLORS['blue'], 
+                                    COLORBLIND_COLORS['green'], COLORBLIND_COLORS['purple']])
     ))
     
     # Add arrows
@@ -100,7 +114,7 @@ def plot_gene_relationship(gene_a, gene_b, gene_c, gene_d, gene_embeddings):
         ay=df.loc[df['gene'] == gene_a, 'y'].iloc[0],
         xref="x", yref="y", axref="x", ayref="y",
         showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
-        arrowcolor="red"
+        arrowcolor=COLORBLIND_COLORS['red']
     )
     fig.add_annotation(
         x=df.loc[df['gene'] == gene_d, 'x'].iloc[0],
@@ -109,7 +123,7 @@ def plot_gene_relationship(gene_a, gene_b, gene_c, gene_d, gene_embeddings):
         ay=df.loc[df['gene'] == gene_c, 'y'].iloc[0],
         xref="x", yref="y", axref="x", ayref="y",
         showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
-        arrowcolor="green"
+        arrowcolor=COLORBLIND_COLORS['green']
     )
     
     fig.update_layout(
