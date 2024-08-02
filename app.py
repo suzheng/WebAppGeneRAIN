@@ -66,7 +66,7 @@ st.markdown("""
 def home():
     try:
         measurement_id = st.secrets['Measurement_Id']
-        add_google_analytics(measurement_id)
+        add_google_analytics()
         # st.write(f"Google Analytics has been integrated successfully, ID {measurement_id}.")
     except FileNotFoundError:
         st.write("Secrets file not found. Google Analytics integration skipped.")
