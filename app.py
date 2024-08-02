@@ -11,6 +11,15 @@ mapping_file_path = "data/gencode.v43.Ensembl_ID_gene_symbol_mapping.GeneRAIN.tx
 gene_embeddings = read_gene_embeddings(file_path)
 ensembl_to_symbol, symbol_to_ensembl = load_gene_id_mapping(mapping_file_path)
 
+try:
+    measurement_id = st.secrets['Measurement_Id']
+    add_google_analytics()
+    # st.write(f"Google Analytics has been integrated successfully, ID {measurement_id}.")
+except FileNotFoundError:
+    st.write("Secrets file not found. Google Analytics integration skipped.")
+except KeyError:
+    st.write("Google Analytics Measurement ID is not available in the secrets.")
+
 # Sidebar for navigation
 st.sidebar.title("GeneRAIN-vec")
 
@@ -64,14 +73,7 @@ st.markdown("""
 
 # Home page
 def home():
-    try:
-        measurement_id = st.secrets['Measurement_Id']
-        add_google_analytics()
-        # st.write(f"Google Analytics has been integrated successfully, ID {measurement_id}.")
-    except FileNotFoundError:
-        st.write("Secrets file not found. Google Analytics integration skipped.")
-    except KeyError:
-        st.write("Google Analytics Measurement ID is not available in the secrets.")
+
 
     image = Image.open("data/crop2.jpg")
     st.image(image, use_column_width=True)
