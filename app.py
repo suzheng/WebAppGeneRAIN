@@ -1,5 +1,5 @@
 import streamlit as st
-from utils.data_utils import read_gene_embeddings, load_gene_id_mapping, get_gene_id
+from utils.data_utils import read_gene_embeddings, load_gene_id_mapping, get_gene_id, add_google_analytics
 from utils.gene_utils import find_closest_genes, calculate_similarity, gene_calculation
 from utils.visualization_utils import plot_gene_embeddings, plot_gene_relationship
 import pandas as pd
@@ -64,6 +64,15 @@ st.markdown("""
 
 # Home page
 def home():
+    try:
+        measurement_id = st.secrets['Measurement_Id']
+        add_google_analytics(measurement_id)
+        # st.write(f"Google Analytics has been integrated successfully, ID {measurement_id}.")
+    except FileNotFoundError:
+        st.write("Secrets file not found. Google Analytics integration skipped.")
+    except KeyError:
+        st.write("Google Analytics Measurement ID is not available in the secrets.")
+
     image = Image.open("data/crop2.jpg")
     st.image(image, use_column_width=True)
     # st.title("GeneRAIN-vec Gene Embedding Analysis Tools")

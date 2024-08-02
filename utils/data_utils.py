@@ -31,3 +31,17 @@ def get_gene_id(gene, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl):
         return ensembl_to_symbol[gene]
     else:
         return None
+
+def add_google_analytics(measurement_id):
+    ga_script = f"""
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id={measurement_id}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){{dataLayer.push(arguments);}}
+      gtag('js', new Date());
+
+      gtag('config', '{measurement_id}');
+    </script>
+    """
+    st.components.v1.html(ga_script, height=0)
