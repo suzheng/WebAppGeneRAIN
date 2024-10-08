@@ -29,3 +29,21 @@ def gene_calculation(gene_a, gene_b, gene_c, gene_embeddings):
                     for gene, embedding in gene_embeddings.items()
                     if gene not in [gene_a, gene_b, gene_c]]  # Exclude input genes
     return sorted(similarities, key=lambda x: x[1], reverse=True)[0]
+
+
+def clean_gene_id(gene):
+    """
+    Removes the version number from an Ensembl gene ID, if present and if the ID starts with 'ENS' (case-insensitive).
+    For example, converts 'ENSG0000000123.2' to 'ENSG0000000123', but leaves 'TP53.2' unchanged.
+    
+    Args:
+        gene (str): The gene identifier input by the user.
+    
+    Returns:
+        str: The cleaned gene identifier without the version number if applicable.
+    """
+    if isinstance(gene, str) and gene.lower().startswith('ens'):
+        return gene.split('.')[0]
+    return gene
+
+

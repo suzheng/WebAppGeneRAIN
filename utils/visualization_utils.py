@@ -20,7 +20,18 @@ COLORBLIND_COLORS = {
     'gray': '#969696'
 }
 
-def plot_gene_embeddings(embeddings, genes, method, target_gene=None, lists=None):
+def plot_gene_embeddings(embeddings, genes, method, target_gene=None, lists=None, group_labels=None):
+    """
+    Plots gene embeddings using PCA, t-SNE, or UMAP.
+
+    Args:
+        embeddings (list): List of embedding vectors.
+        genes (list): List of gene identifiers.
+        method (str): Dimensionality reduction method ("PCA", "t-SNE", "UMAP").
+        target_gene (str, optional): Gene identifier to highlight.
+        lists (list of lists, optional): Lists of genes for coloring.
+        group_labels (dict, optional): Custom labels for groups when target_gene is provided.
+    """
     if len(embeddings) < 3:
         st.error("Not enough genes to visualize. Please provide at least 3 genes.")
         return
@@ -44,10 +55,37 @@ def plot_gene_embeddings(embeddings, genes, method, target_gene=None, lists=None
     })
     
     if target_gene:
-        df['My input gene'] = df['gene'] == target_gene
-        fig = px.scatter(df, x='x', y='y', text='gene', color='My input gene',
-                         color_discrete_map={True: COLORBLIND_COLORS['red'], False: COLORBLIND_COLORS['blue']},
-                         title=f"{method} Visualization of Similar Genes")
+        # Create a boolean column for the target gene
+        df['is_input'] = df['gene'] == target_gene
+        
+        if group_labels:
+            # Map boolean to custom labels
+            df['group'] = df['is_input'].map(group_labels)
+            # Define color mapping based on labels
+            fig = px.scatter(
+                df, 
+                x='x', 
+                y='y', 
+                text='gene', 
+                color='group',
+                color_discrete_map={
+                    group_labels[True]: COLORBLIND_COLORS['red'], 
+                    group_labels[False]: COLORBLIND_COLORS['blue']
+                },
+                title=f"{method} Visualization of Similar Genes"
+            )
+        else:
+            # Default labeling
+            fig = px.scatter(
+                df, 
+                x='x', 
+                y='y', 
+                text='gene', 
+                color='is_input',
+                color_discrete_map={True: COLORBLIND_COLORS['red'], False: COLORBLIND_COLORS['blue']},
+                title=f"{method} Visualization of Similar Genes"
+            )
+
     elif lists:
         color_map = {'List 1': COLORBLIND_COLORS['blue'], 
                      'List 2': COLORBLIND_COLORS['orange'], 

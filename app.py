@@ -1,10 +1,17 @@
 import streamlit as st
 from utils.data_utils import read_gene_embeddings, load_gene_id_mapping, get_gene_id, add_google_analytics
-from utils.gene_utils import find_closest_genes, calculate_similarity, gene_calculation
+from utils.gene_utils import find_closest_genes, calculate_similarity, gene_calculation, clean_gene_id
 from utils.visualization_utils import plot_gene_embeddings, plot_gene_relationship
 import pandas as pd
 from utils.data_utils import get_gene_id
 from PIL import Image
+import streamlit_analytics2 as streamlit_analytics
+# from dotenv import load_dotenv
+import os
+# load_dotenv()
+analytics_password = st.secrets["ANALYTICS_PASSWORD"]
+
+
 # Load gene embeddings and ID mapping
 file_path = "data/GeneRAIN-vec.200d.txt.gz"
 mapping_file_path = "data/gencode.v43.Ensembl_ID_gene_symbol_mapping.GeneRAIN.txt"
@@ -89,6 +96,8 @@ def home():
     ### About the GeneRAIN Models
     GeneRAIN are transformer-based models trained on a large dataset of 410K human bulk RNA-seq samples. These embeddings are derived from the GPT protein-coding+lncRNA model, which uses a novel 'Binning-By-Gene' normalization method and a GPT (Generative Pre-trained Transformer) architecture to learn multifaceted representations of genes.
 
+    **Please note that some genes (especially lncRNAs) are not included in the model due to low gene expression across training samples.**
+
     ### How to Use the Tools
     Use the sidebar to select from four main functions:
     1. Find Similar Genes
@@ -123,6 +132,8 @@ def similar_genes():
     col1, col2 = st.columns([3, 1])
     with col1:
         target_gene = st.text_input("Enter a gene name or Ensembl ID (e.g. TP53 or ENSG00000141510):", key="target_gene_input")
+        target_gene = clean_gene_id(target_gene)  # Clean the input here
+
         num_genes = st.selectbox("Number of similar genes to return:", options=[10, 20, 50, 100], index=0)
         submit_button = st.button("Submit", key="submit_button", use_container_width=True, help="Click to find similar genes")
         st.markdown('<div class="primary-button"></div>', unsafe_allow_html=True)       
@@ -176,7 +187,17 @@ def similar_genes():
             embeddings_to_plot = [gene_embeddings[gene] for gene in genes_to_plot]
             
             method = st.radio("Select visualization method:", ["PCA", "t-SNE", "UMAP"])
-            plot_gene_embeddings(embeddings_to_plot, genes_to_plot, method, gene_id)
+            custom_group_labels = {True: "Input gene", False: "Similar genes"}
+            
+            # Call plot_gene_embeddings with custom_group_labels
+            plot_gene_embeddings(
+                embeddings=embeddings_to_plot, 
+                genes=genes_to_plot, 
+                method=method, 
+                target_gene=gene_id, 
+                group_labels=custom_group_labels  # Pass custom labels here
+            )
+
         else:
             st.error(f"Gene {target_gene} not found in the embeddings.")
 
@@ -223,7 +244,7 @@ def visualization():
         if len(lists) > 3:
             st.error("Please enter at most three lists of genes.")
         else:
-            all_genes = [gene.strip() for sublist in lists for gene in sublist]
+            all_genes = [clean_gene_id(gene.strip()) for sublist in lists for gene in sublist]
             valid_genes = []
             invalid_genes = []
             for gene in all_genes:
@@ -272,6 +293,11 @@ def calculator():
 
     if st.button("Calculate", key="calc_button", use_container_width=True, help="Click to calculate gene relationship"):
         st.markdown('<div class="primary-button"></div>', unsafe_allow_html=True)
+
+        # Clean the gene inputs
+        gene_a = clean_gene_id(gene_a)
+        gene_b = clean_gene_id(gene_b)
+        gene_c = clean_gene_id(gene_c)
     
         if gene_a and gene_b and gene_c:
             gene_a_id = get_gene_id(gene_a, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
@@ -319,7 +345,15 @@ def computing_similarity():
     if st.button("Calculate", key="sim_calc_button", use_container_width=True, help="Click to calculate gene embedding similarity"):
         st.markdown('<div class="primary-button"></div>', unsafe_allow_html=True)
         if genes:
-            gene1, gene2 = genes.split()
+            try:
+                gene1, gene2 = genes.split()
+            except ValueError:
+                st.error("Please enter exactly two genes separated by a space.")
+                return
+            
+            # Clean the gene inputs
+            gene1 = clean_gene_id(gene1)
+            gene2 = clean_gene_id(gene2)
             gene1_id = get_gene_id(gene1, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
             gene2_id = get_gene_id(gene2, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
             
@@ -338,38 +372,43 @@ def computing_similarity():
         else:
             st.error("Please enter two genes.")
 
+# use utils/key-to-toml to generate the textkey
+# following https://blog.streamlit.io/streamlit-firestore-continued/#part-4-securely-deploying-on-streamlit-sharing
+# https://console.firebase.google.com/project/generain-vec/firestore
+# 
+with streamlit_analytics.track(unsafe_password=analytics_password, 
+                               streamlit_secrets_firestore_key="textkey", 
+                               firestore_collection_name="counts",
+                               firestore_project_name="generain-vec",
+                               ):
+    # Render the selected page
+    if 'page' not in st.session_state:
+        st.session_state.page = "Home"
+    if st.session_state.page == "Home":
+        home()
+    elif st.session_state.page == "Similar Genes":
+        similar_genes()
+    elif st.session_state.page == "Visualization":
+        visualization()
+    elif st.session_state.page == "Calculator":
+        calculator()
+    elif st.session_state.page == "Computing Similarity":
+        computing_similarity()
 
+    # Footer
+    st.sidebar.markdown("---")
+    st.sidebar.info("""
+    This app analyzes gene embeddings using various techniques. 
+    The embeddings are derived from the GeneRAIN model, which was trained on a large dataset of human bulk RNA-seq samples.
+    For more details, please refer to our paper.
+    """)
 
-# Initialize the page state if it doesn't exist
-if 'page' not in st.session_state:
-    st.session_state.page = "Home"
-
-# Rest of your code remains the same, but replace the if-elif statements with:
-if st.session_state.page == "Home":
-    home()
-elif st.session_state.page == "Similar Genes":
-    similar_genes()
-elif st.session_state.page == "Visualization":
-    visualization()
-elif st.session_state.page == "Calculator":
-    calculator()
-elif st.session_state.page == "Computing Similarity":
-    computing_similarity()
-
-# Footer
-st.sidebar.markdown("---")
-st.sidebar.info("""
-This app analyzes gene embeddings using various techniques. 
-The embeddings are derived from the GeneRAIN model, which was trained on a large dataset of human bulk RNA-seq samples.
-For more details, please refer to our paper.
-""")
-
-# Add license statement
-st.sidebar.markdown("---")
-st.sidebar.markdown("""
-<small>
-This work is licensed under a 
-<a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank">
-CC BY-NC 4.0 License</a>.
-</small>
-""", unsafe_allow_html=True)
+    # Add license statement
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("""
+    <small>
+    This work is licensed under a 
+    <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank">
+    CC BY-NC 4.0 License</a>.
+    </small>
+    """, unsafe_allow_html=True)
