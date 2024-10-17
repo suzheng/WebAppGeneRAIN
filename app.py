@@ -1,31 +1,26 @@
 import streamlit as st
-from utils.data_utils import read_gene_embeddings, load_gene_id_mapping, get_gene_id, add_google_analytics
+from utils.data_utils import read_gene_embeddings, load_gene_id_mapping, get_gene_id
 from utils.gene_utils import find_closest_genes, calculate_similarity, gene_calculation, clean_gene_id
-from utils.visualization_utils import plot_gene_embeddings, plot_gene_relationship
+from utils.visualization_utils import plot_gene_embeddings, plot_gene_relationship, plot_calculator_plus
 import pandas as pd
 from utils.data_utils import get_gene_id
 from PIL import Image
 import streamlit_analytics2 as streamlit_analytics
-# from dotenv import load_dotenv
 import os
+import re  # Added for regex parsing
+import numpy as np
+from scipy.spatial.distance import cosine
+
+# Load dotenv if needed
+# from dotenv import load_dotenv
 # load_dotenv()
 analytics_password = st.secrets["ANALYTICS_PASSWORD"]
-
 
 # Load gene embeddings and ID mapping
 file_path = "data/GeneRAIN-vec.200d.txt.gz"
 mapping_file_path = "data/gencode.v43.Ensembl_ID_gene_symbol_mapping.GeneRAIN.txt"
 gene_embeddings = read_gene_embeddings(file_path)
 ensembl_to_symbol, symbol_to_ensembl = load_gene_id_mapping(mapping_file_path)
-
-# try:
-#     measurement_id = st.secrets['Measurement_Id']
-#     add_google_analytics()
-#     # st.write(f"Google Analytics has been integrated successfully, ID {measurement_id}.")
-# except FileNotFoundError:
-#     st.write("Secrets file not found. Google Analytics integration skipped.")
-# except KeyError:
-#     st.write("Google Analytics Measurement ID is not available in the secrets.")
 
 # Sidebar for navigation
 st.sidebar.title("GeneRAIN-vec")
@@ -42,8 +37,11 @@ if nav_container.button("Visualization"):
     st.session_state.page = "Visualization"
 if nav_container.button("Calculator"):
     st.session_state.page = "Calculator"
+if nav_container.button("Calculator Plus"):  # New button
+    st.session_state.page = "Calculator Plus"
 if nav_container.button("Computing Similarity"):
     st.session_state.page = "Computing Similarity"
+
 st.markdown("""
 <style>
     /* Existing styles for navigation buttons */
@@ -280,10 +278,10 @@ def calculator():
     
     def update_input():
         st.session_state.gene_a = "BRCA1"
-        st.session_state.gene_b = "BRCA2"
-        st.session_state.gene_c = "TP53"
+        st.session_state.gene_b = "TP53"
+        st.session_state.gene_c = "TTN"
 
-    st.write("Calculate: gene_D is to gene_C as gene_A is to gene_B")
+    st.write("Calculate: gene_D is to gene_C as gene_B is to gene_A")
     gene_a = st.text_input("Enter gene A:", key="gene_a")
     gene_b = st.text_input("Enter gene B:", key="gene_b")
     gene_c = st.text_input("Enter gene C:", key="gene_c")
@@ -376,6 +374,165 @@ def computing_similarity():
 # following https://blog.streamlit.io/streamlit-firestore-continued/#part-4-securely-deploying-on-streamlit-sharing
 # https://console.firebase.google.com/project/generain-vec/firestore
 # 
+
+def calculator_plus():
+    st.header("Gene Relationship Calculator Plus")
+    st.markdown("""
+    This enhanced calculator allows you to input complex mathematical expressions involving genes.
+    
+    ### How to Use:
+    1. Enter a mathematical expression using gene symbols or Ensembl IDs. Examples:
+       - `geneA + geneB - geneC + 2*geneD - geneE`
+       - `geneA + geneB - geneC + 2geneD - geneE`
+       - `geneA + geneB - geneC + 2 x geneD - geneE`
+    2. The app will parse the expression, compute the resulting vector, identify the closest gene, and visualize the calculation.
+    3. View the resulting gene and download the details if needed.
+    
+    **Note:** Ensure that gene identifiers are valid and present in the embeddings.
+    """)
+
+    # Input field for the expression
+    expression = st.text_input(
+        "Enter your gene expression:",
+        value="TP53 + TTN - BRCA1",
+        help="Use '+' or '-' to combine genes. You can specify coefficients like '2*geneD', '2geneD', or '2 x geneD'."
+    )
+
+    # Checkbox to exclude input genes from the result
+    exclude_input = st.checkbox(
+        "Exclude input genes from the resulting gene",
+        value=True,
+        help="If checked, the resulting gene will not be one of the input genes."
+    )
+
+    # Submit button
+    if st.button("Calculate", key="calc_plus_button", use_container_width=True, help="Click to perform calculation"):
+        st.markdown('<div class="primary-button"></div>', unsafe_allow_html=True)
+        if expression:
+            try:
+                # Parse the expression
+                terms = parse_expression(expression)
+                # st.subheader("Parsed Terms")
+                # st.write(terms)
+
+                # Validate genes and compute the result vector
+                valid_terms, invalid_genes = validate_genes(terms, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
+                if invalid_genes:
+                    st.error(f"The following genes were not found: {', '.join(invalid_genes)}")
+                    return
+
+                # Calculate the resultant vector
+                result_vector = calculate_result_vector(valid_terms, gene_embeddings)
+
+                # Extract list of input genes to potentially exclude
+                input_genes = [gene_id for _, gene_id in valid_terms]
+
+                # Find the closest gene to the result vector, excluding input genes if selected
+                result_gene, similarity = find_closest_gene(result_vector, gene_embeddings, exclude_genes=input_genes if exclude_input else None)
+
+                if result_gene:
+                    display_name = ensembl_to_symbol.get(result_gene, result_gene)
+                    st.success(f"The resulting gene is: **{display_name} ({result_gene})** with similarity score: **{similarity:.4f}**")
+                else:
+                    st.error("No similar gene found for the resultant vector.")
+
+                # Visualization
+                st.subheader("Visualization")
+                if result_gene:
+                    plot_calculator_plus(valid_terms, result_vector, gene_embeddings, ensembl_to_symbol, result_gene)
+                else:
+                    plot_calculator_plus(valid_terms, result_vector, gene_embeddings, ensembl_to_symbol)
+                
+            except Exception as e:
+                st.error(f"An error occurred while processing the expression: {e}")
+        else:
+            st.error("Please enter a mathematical expression.")
+
+# Helper functions
+def parse_expression(expression):
+    """
+    Parses the mathematical expression and returns a list of tuples (coefficient, gene).
+    Supports formats like '2*geneD', '2geneD', '2 x geneD'.
+    """
+    # Replace 'x' with '*' for uniformity
+    expression = expression.replace(' x ', '*')
+    # Replace spaces
+    expression = expression.replace(' ', '')
+    # Use regex to find all terms
+    pattern = r'([+\-]?[^+\-]+)'
+    raw_terms = re.findall(pattern, expression)
+    
+    terms = []
+    for term in raw_terms:
+        # Match coefficient and gene
+        match = re.match(r'([+\-]?)(\d*\.?\d*)\*?([A-Za-z0-9]+)', term)
+        if match:
+            sign, coeff, gene = match.groups()
+            if coeff == '':
+                coeff = 1.0
+            else:
+                coeff = float(coeff)
+            if sign == '-':
+                coeff = -coeff
+            elif sign == '+':
+                coeff = coeff
+            else:
+                coeff = coeff
+            terms.append((coeff, gene))
+        else:
+            raise ValueError(f"Invalid term format: '{term}'")
+    return terms
+
+
+
+def validate_genes(terms, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl):
+    """
+    Validates that all genes in the terms exist in the embeddings.
+    Returns a tuple (valid_terms, invalid_genes).
+    """
+    valid_terms = []
+    invalid_genes = []
+    for coeff, gene in terms:
+        gene_id = get_gene_id(gene, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl)
+        if gene_id:
+            valid_terms.append((coeff, gene_id))
+        else:
+            invalid_genes.append(gene)
+    return valid_terms, invalid_genes
+
+def calculate_result_vector(terms, gene_embeddings):
+    """
+    Calculates the resultant vector based on the linear combination of gene embeddings.
+    """
+    result_vector = np.zeros(next(iter(gene_embeddings.values())).shape)
+    for coeff, gene in terms:
+        result_vector += coeff * gene_embeddings[gene]
+    return result_vector
+
+def find_closest_gene(result_vector, gene_embeddings, exclude_genes=None):
+    """
+    Finds the gene whose embedding is closest to the result vector.
+    Optionally excludes a list of genes from consideration.
+
+    Args:
+        result_vector (numpy array): The resultant vector from the linear combination.
+        gene_embeddings (dict): Dictionary of gene embeddings.
+        exclude_genes (list, optional): List of gene IDs to exclude from the search.
+
+    Returns:
+        tuple: (gene, similarity_score)
+    """
+    similarities = []
+    for gene, embedding in gene_embeddings.items():
+        if exclude_genes and gene in exclude_genes:
+            continue  # Skip excluded genes
+        similarity = 1 - cosine(embedding, result_vector)
+        similarities.append((gene, similarity))
+    # Exclude genes with similarity of 1 (exact match) if desired
+    similarities = [s for s in similarities if s[1] < 1.0]
+    similarities_sorted = sorted(similarities, key=lambda x: x[1], reverse=True)
+    return similarities_sorted[0] if similarities_sorted else (None, None)
+
 with streamlit_analytics.track(unsafe_password=analytics_password, 
                                streamlit_secrets_firestore_key="textkey", 
                                firestore_collection_name="counts",
@@ -392,23 +549,10 @@ with streamlit_analytics.track(unsafe_password=analytics_password,
         visualization()
     elif st.session_state.page == "Calculator":
         calculator()
+    elif st.session_state.page == "Calculator Plus":  # New page
+        calculator_plus()
     elif st.session_state.page == "Computing Similarity":
         computing_similarity()
 
     # Footer
     st.sidebar.markdown("---")
-    st.sidebar.info("""
-    This app analyzes gene embeddings using various techniques. 
-    The embeddings are derived from the GeneRAIN model, which was trained on a large dataset of human bulk RNA-seq samples.
-    For more details, please refer to our paper.
-    """)
-
-    # Add license statement
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("""
-    <small>
-    This work is licensed under a 
-    <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank">
-    CC BY-NC 4.0 License</a>.
-    </small>
-    """, unsafe_allow_html=True)

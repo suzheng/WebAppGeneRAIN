@@ -32,25 +32,3 @@ def get_gene_id(gene, gene_embeddings, ensembl_to_symbol, symbol_to_ensembl):
     else:
         return None
 
-def add_google_analytics():
-    # Fetching Measurement ID from secrets
-    measurement_id = st.secrets.get('Measurement_Id')
-    
-    if not measurement_id:
-        st.warning("Google Analytics Measurement ID is not available in the secrets. Analytics integration skipped.")
-        return
-
-    # Inject the complete Google Analytics tag
-    ga_tag = f"""
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id={measurement_id}"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){{dataLayer.push(arguments);}}
-      gtag('js', new Date());
-      gtag('config', '{measurement_id}');
-    </script>
-    """
-    
-    # Inject the tag into the Streamlit app
-    st.components.v1.html(ga_tag, height=0)

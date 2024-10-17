@@ -174,3 +174,220 @@ def plot_gene_relationship(gene_a, gene_b, gene_c, gene_d, gene_embeddings):
     )
     
     return fig
+
+
+def plot_calculator_plus(terms, result_vector, gene_embeddings, ensembl_to_symbol, result_gene=None):
+    COLORBLIND_COLORS = [
+        '#377eb8',  # Blue
+        '#ff7f00',  # Orange
+        '#4daf4a',  # Green
+        '#f781bf',  # Pink
+        '#a65628',  # Brown
+        '#984ea3',  # Purple
+        '#999999',  # Gray
+        '#e41a1c',  # Red
+        '#dede00'   # Yellow
+    ]
+    """
+    Visualizes the linear combination of gene embeddings as connected vectors in a 2D space.
+    
+    Each gene is represented as an arrow starting from the end of the previous vector.
+    The first vector starts at the origin (0,0). The resultant vector is plotted from origin to the end of the last vector.
+    If a result_gene is provided, its embedding is visualized as an additional vector starting from the end of the last term vector.
+    
+    Args:
+        terms (list of tuples): Each tuple contains (coefficient, gene_id).
+        result_vector (numpy array): The resulting vector from the linear combination.
+        gene_embeddings (dict): Dictionary of gene embeddings.
+        result_gene (str, optional): The Ensembl ID of the resulting gene.
+    """
+    # Collect all vectors: term vectors
+    term_vectors = []
+    gene_names = []
+    coefficients = []
+    
+    for coeff, gene in terms:
+        embedding = gene_embeddings[gene]
+        term_vectors.append(coeff * embedding)
+        gene_names.append(gene)
+        coefficients.append(coeff)
+    
+    # If result_gene is provided, get its embedding
+    if result_gene and result_gene in gene_embeddings:
+        closest_gene_embedding = gene_embeddings[result_gene]
+        all_vectors = term_vectors + [result_vector, closest_gene_embedding]
+        include_closest = True
+    else:
+        all_vectors = term_vectors + [result_vector]
+        include_closest = False
+
+    # Perform PCA on all vectors to reduce to 2D
+    pca = PCA(n_components=2)
+    vectors_2d = pca.fit_transform(all_vectors)
+    
+    # Separate PCA-transformed vectors
+    term_vectors_2d = vectors_2d[:-2] if include_closest else vectors_2d[:-1]
+    resultant_vector_2d = vectors_2d[-2] if include_closest else vectors_2d[-1]
+    if include_closest:
+        closest_gene_vector_2d = vectors_2d[-1]
+    
+    # Initialize starting point
+    x_start, y_start = 0, 0
+    
+    # Initialize Plotly figure
+    fig = go.Figure()
+    
+    # Plot each term as a vector
+    for idx, (vec, gene, coeff) in enumerate(zip(term_vectors_2d, gene_names, coefficients)):
+        x_end, y_end = vec
+        color = COLORBLIND_COLORS[idx % len(COLORBLIND_COLORS)]
+        
+        # Format the label with coefficient and sign
+        if coeff == 1:
+            label = f"+ {ensembl_to_symbol.get(gene, gene)}"
+        elif coeff == -1:
+            label = f"- {ensembl_to_symbol.get(gene, gene)}"
+        elif coeff > 0:
+            label = f"{coeff} * {ensembl_to_symbol.get(gene, gene)}"
+        else:
+            label = f"{coeff} * {ensembl_to_symbol.get(gene, gene)}"
+        
+        # Add arrow for the vector
+        fig.add_trace(go.Scatter(
+            x=[x_start, x_end],
+            y=[y_start, y_end],
+            mode='lines',
+            line=dict(color=color, width=3),
+            showlegend=False,
+            hoverinfo='none'
+        ))
+        
+        # Add marker at the end of the vector
+        fig.add_trace(go.Scatter(
+            x=[x_end],
+            y=[y_end],
+            mode='markers',
+            marker=dict(color=color, size=8),
+            showlegend=False,
+            hoverinfo='none'
+        ))
+        
+        # Add text label at the midpoint of the vector
+        fig.add_trace(go.Scatter(
+            x=[(x_start + x_end) / 2],
+            y=[(y_start + y_end) / 2],
+            mode='text',
+            text=[label],
+            textposition='middle center',
+            showlegend=False,
+            hoverinfo='none',
+            textfont=dict(color=color, size=12)
+        ))
+        
+        # Update starting point for the next vector
+        x_start, y_start = x_end, y_end
+    
+    # Plot the resultant vector from origin to the end of the last vector
+    fig.add_trace(go.Scatter(
+        x=[0, x_start],
+        y=[0, y_start],
+        mode='lines',
+        line=dict(color='black', width=4, dash='dash'),
+        name='Resultant Vector',
+        hoverinfo='none'
+    ))
+    
+    # Add marker for the resultant vector end
+    fig.add_trace(go.Scatter(
+        x=[x_start],
+        y=[y_start],
+        mode='markers',
+        marker=dict(color='black', size=10),
+        showlegend=False,
+        hoverinfo='none'
+    ))
+    
+    # Add text label for the resultant vector at its midpoint
+    fig.add_trace(go.Scatter(
+        x=[x_start / 2],
+        y=[y_start / 2],
+        mode='text',
+        text=['Resultant'],
+        textposition='middle center',
+        showlegend=False,
+        hoverinfo='none',
+        textfont=dict(color='black', size=12)
+    ))
+    
+    # If closest gene is to be included, plot its embedding
+    if include_closest:
+        # Draw an arrow from the end of the last term vector to the closest gene's embedding
+        fig.add_trace(go.Scatter(
+            x=[x_start, closest_gene_vector_2d[0]],
+            y=[y_start, closest_gene_vector_2d[1]],
+            mode='lines',
+            line=dict(color='green', width=3, dash='dot'),
+            name='Closest Gene',
+            hoverinfo='none'
+        ))
+        
+        # Add marker for the closest gene
+        fig.add_trace(go.Scatter(
+            x=[closest_gene_vector_2d[0]],
+            y=[closest_gene_vector_2d[1]],
+            mode='markers',
+            marker=dict(color='green', size=10),
+            showlegend=False,
+            hoverinfo='none'
+        ))
+        
+        # Add text label for the closest gene at its position
+        fig.add_trace(go.Scatter(
+            x=[closest_gene_vector_2d[0]],
+            y=[closest_gene_vector_2d[1]],
+            mode='text',
+            text=[f"Closest: {ensembl_to_symbol.get(result_gene, result_gene)}"],
+            textposition='top right',
+            showlegend=False,
+            hoverinfo='none',
+            textfont=dict(color='green', size=12)
+        ))
+    
+    # Update layout for better visualization
+    fig.update_layout(
+        title="Calculator Plus Visualization",
+        xaxis_title="PCA Component 1",
+        yaxis_title="PCA Component 2",
+        showlegend=True,
+        height=600,
+        width=700,
+        template='plotly_white',
+        xaxis=dict(scaleanchor="y", scaleratio=1),
+        yaxis=dict(scaleanchor="x", scaleratio=1),
+        shapes=[
+            dict(
+                type="line",
+                x0=0, y0=0, x1=0, y1=0,
+                line=dict(color="rgba(0,0,0,0)", width=0)
+            )
+        ],
+        annotations=[
+            dict(
+                x=0, y=0,
+                xref="x", yref="y",
+                text="Origin",
+                showarrow=False,
+                font=dict(color="black")
+            )
+        ]
+    )
+    
+    # Determine plot ranges based on vectors
+    all_x = vectors_2d[:, 0]
+    all_y = vectors_2d[:, 1]
+    buffer = 0.1 * max(np.max(np.abs(all_x)), np.max(np.abs(all_y)))
+    fig.update_xaxes(range=[min(all_x) - buffer, max(all_x) + buffer])
+    fig.update_yaxes(range=[min(all_y) - buffer, max(all_y) + buffer])
+    
+    # Display the plot in Streamlit
+    st.plotly_chart(fig, use_container_width=True)

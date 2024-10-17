@@ -24,7 +24,10 @@ def calculate_similarity(gene1, gene2, gene_embeddings):
     return similarity, rank_1, quantile_1, rank_2, quantile_2
 
 def gene_calculation(gene_a, gene_b, gene_c, gene_embeddings):
+    print((gene_a, gene_b, gene_c))
     result_vector = (gene_embeddings[gene_b] - gene_embeddings[gene_a] + gene_embeddings[gene_c])
+    # similarities = [(gene, 1 - cosine(embedding, result_vector)) 
+    #                 for gene, embedding in gene_embeddings.items()]  # Exclude input genes
     similarities = [(gene, 1 - cosine(embedding, result_vector)) 
                     for gene, embedding in gene_embeddings.items()
                     if gene not in [gene_a, gene_b, gene_c]]  # Exclude input genes
